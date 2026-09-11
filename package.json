@@ -1,0 +1,20 @@
+{
+  "name": "workforce-management-app",
+  "version": "1.0.0",
+  "description": "A comprehensive workforce management system combining time tracking, scheduling, timesheets, and team management",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=backend\" \"npm run dev --workspace=frontend\"",
+    "build": "npm run build --workspaces",
+    "start": "npm start --workspace=backend",
+    "db:push": "npm run db:push --workspace=backend",
+    "db:generate": "npm run db:generate --workspace=backend"
+  },
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
