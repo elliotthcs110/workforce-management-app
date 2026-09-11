@@ -1,0 +1,314 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Models
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  role      Role     @default(EMPLOYEE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  employeeProfile EmployeeProfile?
+  timesheets      Timesheet[]
+  changeRequests  TimesheetChangeRequest[]
+  schedules       Schedule[]
+  assignments     ShiftAssignment[]
+  clockLogs       ClockLog[]
+  departments     DepartmentMember[]
+  teamMembers     TeamMember[]
+  createdSchedules Schedule[] @relation("CreatedByUser")
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  SUPERVISOR
+  EMPLOYEE
+}
+
+// Employee Profile
+model EmployeeProfile {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  employeeId        String   @unique
+  departmentId      String
+  phoneNumber       String?
+  hireDate          DateTime
+  employmentStatus  String   @default("ACTIVE") // ACTIVE, INACTIVE, ON_LEAVE
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department        Department @relation(fields: [departmentId], references: [id])
+
+  @@map("employee_profiles")
+}
+
+// Departments
+model Department {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  code      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  employees EmployeeProfile[]
+  members   DepartmentMember[]
+  teams     Team[]
+  shifts    Shift[]
+
+  @@map("departments")
+}
+
+// Department Members (for multi-department support)
+model DepartmentMember {
+  id           String   @id @default(cuid())
+  userId       String
+  departmentId String
+  isPrimary    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, departmentId])
+  @@map("department_members")
+}
+
+// Teams
+model Team {
+  id           String   @id @default(cuid())
+  name         String
+  departmentId String
+  description  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  department  Department     @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  members     TeamMember[]
+  shifts      Shift[]
+
+  @@unique([name, departmentId])
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  team User @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+// Shift Types
+model ShiftType {
+  id          String   @id @default(cuid())
+  name        String   @unique // MORNING, EVENING, NIGHT, etc.
+  startTime   String   // HH:mm format
+  endTime     String   // HH:mm format
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  shifts Shift[]
+
+  @@map("shift_types")
+}
+
+// Shifts
+model Shift {
+  id           String   @id @default(cuid())
+  teamId       String
+  departmentId String
+  shiftTypeId  String
+  date         DateTime
+  status       String   @default("SCHEDULED") // SCHEDULED, CANCELLED, COMPLETED
+  minStaff     Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  team        Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  department  Department        @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  shiftType   ShiftType         @relation(fields: [shiftTypeId], references: [id])
+  assignments ShiftAssignment[]
+
+  @@index([date])
+  @@index([teamId])
+  @@map("shifts")
+}
+
+// Shift Assignments
+model ShiftAssignment {
+  id        String   @id @default(cuid())
+  shiftId   String
+  userId    String
+  status    String   @default("ASSIGNED") // ASSIGNED, CONFIRMED, NO_SHOW, COMPLETED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  shift Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shiftId, userId])
+  @@index([userId])
+  @@map("shift_assignments")
+}
+
+// Clock In/Out Log
+model ClockLog {
+  id           String    @id @default(cuid())
+  userId       String
+  shiftId      String?
+  departmentId String
+  teamId       String?
+  clockInTime  DateTime
+  clockOutTime DateTime?
+  duration     Int?      // Duration in minutes
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id])
+
+  @@index([userId])
+  @@index([clockInTime])
+  @@map("clock_logs")
+}
+
+// Timesheets
+model Timesheet {
+  id            String   @id @default(cuid())
+  userId        String
+  weekStartDate DateTime
+  weekEndDate   DateTime
+  status        String   @default("DRAFT") // DRAFT, SUBMITTED, APPROVED, REJECTED
+  totalHours    Float    @default(0)
+  submittedAt   DateTime?
+  approvedAt    DateTime?
+  approvedBy    String?
+  comments      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  user          User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries       TimesheetEntry[]
+  changeRequests TimesheetChangeRequest[]
+
+  @@unique([userId, weekStartDate])
+  @@index([status])
+  @@index([userId])
+  @@map("timesheets")
+}
+
+// Timesheet Entries
+model TimesheetEntry {
+  id          String   @id @default(cuid())
+  timesheetId String
+  date        DateTime
+  startTime   DateTime
+  endTime     DateTime
+  hours       Float
+  category    String   // REGULAR, OVERTIME, BREAK, etc.
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  timesheet Timesheet @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+
+  @@index([timesheetId])
+  @@map("timesheet_entries")
+}
+
+// Timesheet Change Requests
+model TimesheetChangeRequest {
+  id          String   @id @default(cuid())
+  timesheetId String
+  userId      String
+  reason      String
+  changedField String // which field was changed
+  oldValue    String?
+  newValue    String
+  status      String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  approvedBy  String?
+  approvedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  timesheet Timesheet @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([timesheetId])
+  @@map("timesheet_change_requests")
+}
+
+// Schedules
+model Schedule {
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  createdByUserId String
+  startDate       DateTime
+  endDate         DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  createdByUser User @relation("CreatedByUser", fields: [createdByUserId], references: [id])
+  entries       ScheduleEntry[]
+
+  @@map("schedules")
+}
+
+model ScheduleEntry {
+  id         String   @id @default(cuid())
+  scheduleId String
+  startTime  DateTime
+  endTime    DateTime
+  title      String
+  description String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  schedule Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@index([scheduleId])
+  @@map("schedule_entries")
+}
